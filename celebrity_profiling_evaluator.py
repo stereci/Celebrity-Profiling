@@ -1,10 +1,58 @@
 #!/usr/bin/python3
 import argparse
+import sys
 import json
 from collections import Counter
 from statistics import mean
+import re
+# from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
 
-EV_OUT = r"C:\Users\strc\Desktop\TextMining\project\evaluation.prototext"
+EV_OUT = r"C:\Users\ALPI\PycharmProjects\Celebrity-Profiling\evaluation.prototext"
+
+
+def iterload(file):
+    buffer = ""
+    dec = json.JSONDecoder()
+    for line in file:
+        buffer = buffer.strip(" \n\r\t") + line.strip(" \n\r\t")
+        while(True):
+            try:
+                r = dec.raw_decode(buffer)
+            except:
+                break
+            yield r[0]
+            buffer = buffer[r[1]:].strip(" \n\r\t")
+
+
+def clean_text(text):
+    """
+    Applies some pre-processing on the given text.
+
+    Steps :
+    - Removing HTML tags
+    - Removing punctuation
+    - Lowering text
+    """
+
+    # remove HTML tags
+    text = re.sub(r'<.*?>', '', text)
+
+    # remove the characters [\], ['] and ["]
+    text = re.sub(r"\\", "", text)
+    text = re.sub(r"\'", "", text)
+    text = re.sub(r"\"", "", text)
+
+    # convert text to lowercase
+    text = text.strip().lower()
+
+    # replace punctuation characters with spaces
+    filters='!"\'#$%&()*+,-./:;<=>?@[\\]^_`{|}~\t\n'
+    translate_dict = dict((c, " ") for c in filters)
+    translate_map = str.maketrans(translate_dict)
+    text = text.translate(translate_map)
+
+    return text
+
 
 def parse_input():
     """
@@ -20,9 +68,9 @@ def parse_input():
 
     # dont presume all are in the same order:
     pred = {json.loads(u)["id"]: json.loads(u)
-            for u in open(r"C:\Users\strc\Desktop\TextMining\project\labels.ndjson".format(args.predictions)).readlines()}
+            for u in open(r"C:\Users\ALPI\PycharmProjects\Celebrity-Profiling\labels.ndjson".format(args.predictions)).readlines()}
     tr = {json.loads(u)["id"]: json.loads(u)
-          for u in open(r"C:\Users\strc\Desktop\TextMining\project\labels.ndjson".format(args.truth)).readlines()}
+            for u in open(r"C:\Users\ALPI\PycharmProjects\Celebrity-Profiling\labels.ndjson".format(args.truth)).readlines()}
     ids = pred.keys()
 
     return ([pred[i] for i in ids],
@@ -60,6 +108,7 @@ def mc_prec_rec(mc_p, mc_t, hit_function=lambda x, y: x == y):
     :param mc_t: list of true values.
     :return: tuple: list of precision for classes, list of recall for class
     """
+
     def safe_divide(x, y):
         """ basically defines the precision as 0 if nothing is predicted as true"""
         return x / y if y != 0 else 0
@@ -79,7 +128,7 @@ def mc_prec_rec(mc_p, mc_t, hit_function=lambda x, y: x == y):
     return precisions, recalls
 
 
-def age_window_hit(by_predicted, by_truth, m=lambda x: -0.1*x+202.8):
+def age_window_hit(by_predicted, by_truth, m=lambda x: -0.1 * x + 202.8):
     """
     calculates the window for a given truth and checks if the prediction lies within that window
     :param by_predicted: the predicted birth year
@@ -109,6 +158,24 @@ if __name__ == "__main__":
     """
     predictions, truth, output_dir = parse_input()
 
+    # https://medium.com/@bedigunjit/simple-guide-to-text-classification-nlp-using-svm-and-naive-bayes-with-python-421db3a72d34
+    # https://medium.com/data-from-the-trenches/text-classification-the-first-step-toward-nlp-mastery-f5f95d525d73
+
+    # this vectorizer will skip stop words
+    # vectorizer = CountVectorizer(stop_words="english", preprocessor=clean_text)
+    # fit the vectorizer on the training text
+    # vectorizer.fit(training_texts)
+    # # get the vectorizer's vocabulary
+    # inv_vocab = {v: k for k, v in vectorizer.vocabulary_.items()}
+    # vocabulary = [inv_vocab[i] for i in range(len(inv_vocab))]
+    #
+    # # vectorization example
+    # pd.DataFrame(
+    #     data=vectorizer.transform(test_texts).toarray(),
+    #     index=["test sentence"],
+    #     columns=vocabulary
+    # )
+
     gender_prec, gender_rec = mc_prec_rec([u["gender"] for u in predictions],
                                           [u["gender"] for u in truth])
     occ_prec, occ_rec = mc_prec_rec([u["occupation"] for u in predictions],
@@ -129,5 +196,15 @@ if __name__ == "__main__":
         write_output("{}/{}".format(output_dir, EV_OUT), k, v)
 
 
-
-
+    # read line by line
+    with open(r"C:\Users\ALPI\PycharmProjects\Celebrity-Profiling\feeds.ndjson", encoding="utf8") as f:
+        # distros_dict = json.load(f)
+        count = 0
+        for o in iterload(f):
+            print("COUNT : ", count)
+            print("Working on an ", "id: ", o['id'], " text: ", o['text'])
+            count += 1
+            if count == 100:
+                break
+    # for distro in distros_dict:
+    #     print(distro['id'])
