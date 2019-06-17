@@ -1,0 +1,152 @@
+#!/usr/bin/python3
+import argparse
+import sys
+import json
+import re
+import numpy as np
+from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer, TfidfTransformer
+from sklearn.naive_bayes import MultinomialNB
+from sklearn.externals import joblib
+
+
+def iterload(file):
+    buffer = ""
+    dec = json.JSONDecoder()
+    for line in file:
+        buffer = buffer.strip(" \n\r\t") + line.strip(" \n\r\t")
+        while(True):
+            try:
+                r = dec.raw_decode(buffer)
+            except:
+                break
+            yield r[0]
+            buffer = buffer[r[1]:].strip(" \n\r\t")
+
+
+def clean_text(text):
+    # remove HTML tags
+    text = re.sub(r'<.*?>', '', text)
+
+    # remove the characters [\], ['] and ["]
+    text = re.sub(r"\\", "", text)
+    text = re.sub(r"\'", "", text)
+    text = re.sub(r"\"", "", text)
+
+    # convert text to lowercase
+    text = text.strip().lower()
+
+    # replace punctuation characters with spaces
+    filters='!"\'#$%&()*+,-./:;<=>?@[\\]^_`{|}~\t\n'
+    translate_dict = dict((c, " ") for c in filters)
+    translate_map = str.maketrans(translate_dict)
+    text = text.translate(translate_map)
+
+    return text
+
+
+if __name__ == "__main__":
+    train_upper_limit = 27069   # Train data, 80/100 of all data
+    test_upper_limit = 33835    # Test data, 20/100 of all data
+    train_ids = []
+    texts = []
+    # read line by line
+    isAscii = lambda s: len(s) == len(s.encode())
+
+    print("Train data started...")
+    with open(r"C:\Users\ALPI\PycharmProjects\Celebrity-Profiling\feeds.ndjson", encoding="utf8") as f:
+        count = 0
+        for o in iterload(f):
+            count += 1
+            newText = ""
+            for t in o['text']:
+                if isAscii(t):
+                    newText = newText + t
+            texts.append(newText)
+            train_ids.append(o['id'])
+            if count == train_upper_limit:
+                break
+    print("Train data ended...")
+
+    property_ids_feature = {}
+    feature_train = []
+
+    print("Label started...")
+    with open(r"C:\Users\ALPI\PycharmProjects\Celebrity-Profiling\labels.ndjson", encoding="utf8") as f:
+        for o in iterload(f):
+            # features: gender, occupation, fame
+            property_ids_feature[o['id']] = o['occupation']
+    print("Label ended...")
+
+    print("Training label started...")
+    for id in train_ids:
+        feature_train.append(property_ids_feature.get(id))
+    print("Training label ended...")
+
+    # this vectorizer will skip stop words
+    # Tokenizing text with scikit-learn
+    # train data
+    print("Training Vectorizer started...")
+    vectorizer = CountVectorizer(stop_words="english", preprocessor=clean_text)
+    # fit the vectorizer on the training text
+    X_train_counts = vectorizer.fit_transform(texts)
+    del texts
+    print("Training Vectorizer ended...")
+
+    # From occurrences to frequencies
+    print("Training TFIDF started...")
+    tf_transformer = TfidfTransformer(use_idf=False).fit(X_train_counts)
+    X_train_tfidf = tf_transformer.fit_transform(X_train_counts)
+    del tf_transformer
+    del X_train_counts
+    print("Training TFIDF ended...")
+
+    # Training a classifier
+    print("Classifier started...")
+    clf_fame = MultinomialNB().fit(X_train_tfidf, feature_train)
+    del X_train_tfidf
+    print("Classifier ended...")
+
+    # Test data
+    test_texts = []
+    test_ids = []
+    # read line by line
+    print("Test data started...")
+    with open(r"C:\Users\ALPI\PycharmProjects\Celebrity-Profiling\feeds.ndjson", encoding="utf8") as f:
+        count = 0
+        for o in iterload(f):
+            count += 1
+            newText = ""
+            if train_upper_limit < count < test_upper_limit:
+                for t in o['text']:
+                    if isAscii(t):
+                        newText = newText + t
+                test_ids.append(o['id'])
+                test_texts.append(newText)
+            if count == test_upper_limit:
+                break
+    print("Test data ended...")
+
+    feature_test = []
+    print("Test data labeling started...")
+    for id in test_ids:
+        feature_test.append(property_ids_feature.get(id))
+    print("Test data labeling ended...")
+
+    print("Test data vectorizer started...")
+    X_new_counts = vectorizer.transform(test_texts)
+    del test_texts
+    print("Test data vectorizer ended...")
+
+    print("Test data TfidfTransformer started...")
+    new_tf_transformer = TfidfTransformer(use_idf=False).fit(X_new_counts)
+    X_new_tfidf = new_tf_transformer.fit_transform(X_new_counts)
+    del new_tf_transformer
+    del X_new_counts
+    print("Test data TfidfTransformer ended...")
+
+    print("PREDICT started...")
+    predicted_feature = clf_fame.predict(X_new_tfidf)
+    print("Occupation: ", np.mean(predicted_feature == feature_test))
+    del predicted_feature
+    del clf_fame
+    print("PREDICT ended...")
